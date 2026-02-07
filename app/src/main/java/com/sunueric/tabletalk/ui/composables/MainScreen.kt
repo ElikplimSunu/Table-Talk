@@ -49,7 +49,8 @@ fun MainScreen(
     onPickModel: () -> Unit,
     onPickCsv: () -> Unit = {},
     onAskQuestion: (String) -> Unit = {},
-    isModelLoaded: Boolean = false
+    isModelLoaded: Boolean = false,
+    isCsvLoaded: Boolean = false
 ) {
     val context = LocalContext.current
     var userQuestion by remember { mutableStateOf("") }
@@ -86,7 +87,7 @@ fun MainScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Chat input (only show when model is loaded)
+            // Chat input section - always show when model is loaded
             if (isModelLoaded) {
                 ChatInputSection(
                     userQuestion = userQuestion,
@@ -97,7 +98,8 @@ fun MainScreen(
                             userQuestion = ""
                         }
                     },
-                    onPickCsv = onPickCsv
+                    onPickCsv = onPickCsv,
+                    isCsvLoaded = isCsvLoaded
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -132,21 +134,22 @@ fun ChatInputSection(
     userQuestion: String,
     onQuestionChange: (String) -> Unit,
     onSend: () -> Unit,
-    onPickCsv: () -> Unit
+    onPickCsv: () -> Unit,
+    isCsvLoaded: Boolean = false
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // CSV picker button
+            // CSV picker button with status
             OutlinedButton(
                 onClick = onPickCsv,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(Icons.Filled.Add, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Upload CSV File")
+                Text(if (isCsvLoaded) "✓ CSV Loaded - Upload Another" else "Upload CSV File")
             }
 
             Spacer(modifier = Modifier.height(12.dp))
