@@ -1,11 +1,11 @@
 package com.sunueric.tabletalk.viewmodels
 
+import ai.koog.agents.core.tools.ToolRegistry
 import android.app.Application
-import android.net.Uri
 import android.util.Log
+import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import ai.koog.agents.core.tools.ToolRegistry
 import com.llamatik.library.platform.LlamaBridge
 import com.sunueric.tabletalk.agent.AnalyzeCsvTool
 import com.sunueric.tabletalk.agent.GetCsvSchemaTool
@@ -139,7 +139,7 @@ class InferenceViewModel(application: Application) : AndroidViewModel(applicatio
             _uiState.value = InferenceState.Thinking("Loading CSV file...")
             
             try {
-                val uri = Uri.parse(uriString)
+                val uri = uriString.toUri()
                 val context = getApplication<Application>()
                 
                 Log.d(TAG, "Opening input stream for URI...")
@@ -165,16 +165,10 @@ class InferenceViewModel(application: Application) : AndroidViewModel(applicatio
                 Log.d(TAG, "CSV Headers: $currentCsvHeaders")
                 Log.d(TAG, "CSV Data rows: ${currentCsvLines.size}")
 
-                val preview = currentCsvLines.take(10).joinToString("\n")
-                currentCsvData = """
-                    CSV SCHEMA & DATA:
-                    Headers: $currentCsvHeaders
-                    
-                    Data (first 10 rows):
-                    $preview
-                    
-                    Total rows: ${currentCsvLines.size}
-                """.trimIndent()
+                // Format as raw CSV (header + first rows) - TableLLM expects this format
+                val dataRows = currentCsvLines.take(10)
+                val rawCsvPreview = listOf(currentCsvHeaders).plus(dataRows).joinToString("\n")
+                currentCsvData = rawCsvPreview
 
                 // Build Koog ToolRegistry with CSV context
                 buildToolRegistry()
@@ -182,7 +176,7 @@ class InferenceViewModel(application: Application) : AndroidViewModel(applicatio
                 Log.i(TAG, "CSV loaded and ToolRegistry built")
 
                 _uiState.value = InferenceState.Success(
-                    "CSV Loaded!\n\n$currentCsvData\n\nAsk a question about your data!"
+                    "CSV Loaded! (${currentCsvLines.size} rows)\n\nHeaders: $currentCsvHeaders\n\nAsk a question about your data!"
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading CSV", e)
@@ -225,7 +219,7 @@ class InferenceViewModel(application: Application) : AndroidViewModel(applicatio
                 val response = runAgentWithContext(userQuery)
                 
                 // Handle null/empty response
-                if (response.isNullOrBlank()) {
+                if (response.isBlank()) {
                     Log.w(TAG, "Model returned null or blank response")
                     _uiState.value = InferenceState.Error("Model returned empty response. Try reloading the model.")
                 } else {
@@ -242,7 +236,7 @@ class InferenceViewModel(application: Application) : AndroidViewModel(applicatio
     /**
      * Run Koog-style agent with context injection for local model.
      */
-    private suspend fun runAgentWithContext(userQuery: String): String? {
+    private fun runAgentWithContext(userQuery: String): String {
         // Log available tools (learning/demo purpose)
         val availableTools = toolRegistry?.tools?.joinToString(", ") { it.name } ?: "none"
         Log.d(TAG, "Koog Agent - Available tools: $availableTools")
@@ -256,31 +250,27 @@ class InferenceViewModel(application: Application) : AndroidViewModel(applicatio
         // Execute using LlamaBridge
         Log.d(TAG, "Calling LlamaBridge.generate...")
         val result = LlamaBridge.generate(prompt)
-        Log.d(TAG, "LlamaBridge.generate returned: ${result?.take(100) ?: "null"}...")
+        Log.d(TAG, "LlamaBridge.generate returned: ${result.take(100)}...")
         
         return result
     }
 
     /**
-     * Build a prompt for the local Llama model with CSV context.
+     * Build a prompt for the local TableLLM model with CSV context.
+     * Modified to strongly encourage direct text answers instead of code.
      */
     private fun buildPrompt(userQuery: String, csvData: String?): String {
-        val dataContext = csvData ?: "No CSV data loaded."
+        val tableData = csvData ?: "No CSV data loaded."
         
-        return """
-            <|start_header_id|>system<|end_header_id|>
+        // Use a simpler, more direct prompt that discourages code generation
+        return """[INST]Answer the following question about this table data. Give a direct text answer, do not write any code or Python.
 
-            You are a Data Analyst assistant. Analyze the provided CSV data and answer the user's question.
-            Be precise with numbers and always show your reasoning for calculations.
-            <|eot_id|><|start_header_id|>user<|end_header_id|>
+Table:
+$tableData
 
-            Here is the dataset:
-            $dataContext
+Question: $userQuery
 
-            Question: $userQuery
-            <|eot_id|><|start_header_id|>assistant<|end_header_id|>
-
-        """.trimIndent()
+Answer directly in plain text:[INST/]"""
     }
 
     /**

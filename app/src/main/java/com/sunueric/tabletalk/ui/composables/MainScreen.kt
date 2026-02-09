@@ -87,8 +87,10 @@ fun MainScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Chat input section - always show when model is loaded
-            if (isModelLoaded) {
+            // Chat input section - show when model is loaded OR when we have a success state
+            // (Success state implies model was loaded successfully)
+            val showChatInput = isModelLoaded || uiState is InferenceState.Success
+            if (showChatInput) {
                 ChatInputSection(
                     userQuestion = userQuestion,
                     onQuestionChange = { userQuestion = it },

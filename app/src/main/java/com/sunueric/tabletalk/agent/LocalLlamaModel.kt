@@ -13,5 +13,5 @@ val LocalLlamaModel = LLModel(
     id = "llama-local-gguf",
     capabilities = listOf(LLMCapability.Completion),
     contextLength = 4096,
-    maxOutputTokens = 2048
+    maxOutputTokens = 1024
 )

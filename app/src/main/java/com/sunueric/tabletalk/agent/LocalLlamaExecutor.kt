@@ -59,17 +59,22 @@ class LocalLlamaExecutor : PromptExecutor {
     override fun close() {}
 
     // --- Helper ---
+    // Uses TableLLM's Text Answer format with [INST]...[INST/] tags
+    // Reference: https://huggingface.co/RUCKBReasoning/TableLLM-7b#text-answer
     private fun buildLlamaPrompt(messages: List<Message>): String {
         val sb = StringBuilder()
+        sb.append("[INST]")
+        
         messages.forEach { msg ->
             when (msg) {
-                is Message.System -> sb.append("<|start_header_id|>system<|end_header_id|>\n\n${msg.content}<|eot_id|>")
-                is Message.User -> sb.append("<|start_header_id|>user<|end_header_id|>\n\n${msg.content}<|eot_id|>")
-                is Message.Assistant -> sb.append("<|start_header_id|>assistant<|end_header_id|>\n\n${msg.content}<|eot_id|>")
+                is Message.System -> sb.append("${msg.content}\n\n")
+                is Message.User -> sb.append("${msg.content}\n\n")
+                is Message.Assistant -> sb.append("[INST/]${msg.content}[INST]")
                 else -> {}
             }
         }
-        sb.append("<|start_header_id|>assistant<|end_header_id|>\n\n")
+        
+        sb.append("[INST/]")
         return sb.toString()
     }
 }

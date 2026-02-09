@@ -20,6 +20,7 @@ import com.sunueric.tabletalk.ui.composables.MainScreen
 import com.sunueric.tabletalk.ui.theme.TableTalkTheme
 import com.sunueric.tabletalk.utils.FileUtils
 import com.sunueric.tabletalk.viewmodels.InferenceViewModel
+import androidx.core.net.toUri
 
 class MainActivity : ComponentActivity() {
     companion object {
@@ -114,7 +115,7 @@ class MainActivity : ComponentActivity() {
             ).show()
             
             val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                data = Uri.parse("package:$packageName")
+                data = "package:$packageName".toUri()
             }
             storagePermissionLauncher.launch(intent)
             return
