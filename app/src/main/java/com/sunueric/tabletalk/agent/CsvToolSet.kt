@@ -2,15 +2,19 @@ package com.sunueric.tabletalk.agent
 
 import ai.koog.agents.core.tools.SimpleTool
 import ai.koog.agents.core.tools.Tool
+import ai.koog.agents.core.tools.annotations.LLMDescription
 import kotlinx.serialization.Serializable
 
 /**
  * Tool for analyzing CSV data. Uses SimpleTool pattern from Koog.
  * This tool receives CSV context and a query, returns analysis.
  */
+
+@LLMDescription("CSV Analysis Tool")
 class AnalyzeCsvTool(
     private val csvData: String
-) : SimpleTool<AnalyzeCsvTool.Args>(
+)
+    : SimpleTool<AnalyzeCsvTool.Args>(
     argsSerializer = Args.serializer(),
     name = "analyze_csv",
     description = "Analyze CSV data and answer questions about it"

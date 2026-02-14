@@ -21,12 +21,15 @@ import com.sunueric.tabletalk.ui.theme.TableTalkTheme
 import com.sunueric.tabletalk.utils.FileUtils
 import com.sunueric.tabletalk.viewmodels.InferenceViewModel
 import androidx.core.net.toUri
+import dagger.hilt.android.AndroidEntryPoint
 
+
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     companion object {
         private const val TAG = "MainActivity"
     }
-    
+
     private val viewModel: InferenceViewModel by viewModels()
 
     private var pendingModelUri: Uri? = null

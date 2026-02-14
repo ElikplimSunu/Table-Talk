@@ -1,5 +1,15 @@
 package com.sunueric.tabletalk.viewmodels
 
+import ai.koog.agents.core.agent.AIAgent
+import ai.koog.agents.core.agent.functionalStrategy
+import ai.koog.agents.core.dsl.builder.strategy
+import ai.koog.agents.core.dsl.extension.asAssistantMessage
+import ai.koog.agents.core.dsl.extension.containsToolCalls
+import ai.koog.agents.core.dsl.extension.executeMultipleTools
+import ai.koog.agents.core.dsl.extension.extractToolCalls
+import ai.koog.agents.core.dsl.extension.requestLLM
+import ai.koog.agents.core.dsl.extension.requestLLMMultiple
+import ai.koog.agents.core.dsl.extension.sendMultipleToolResults
 import ai.koog.agents.core.tools.ToolRegistry
 import android.app.Application
 import android.util.Log
@@ -10,21 +20,29 @@ import com.llamatik.library.platform.LlamaBridge
 import com.sunueric.tabletalk.agent.AnalyzeCsvTool
 import com.sunueric.tabletalk.agent.GetCsvSchemaTool
 import com.sunueric.tabletalk.agent.LocalLlamaModel
+import com.sunueric.tabletalk.agent.LocalLlamaExecutor
 import com.sunueric.tabletalk.agent.SearchCsvTool
 import com.sunueric.tabletalk.data.ChatMessage
 import com.sunueric.tabletalk.ui.states.InferenceState
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import javax.inject.Inject
 
 /**
  * ViewModel for managing AI inference with Koog AIAgent and local Llama model.
  * Uses hybrid approach: Koog agent structure with manual context injection.
  */
-class InferenceViewModel(application: Application) : AndroidViewModel(application) {
+
+@HiltViewModel
+class InferenceViewModel @Inject constructor (
+    application: Application,
+    private val executor: LocalLlamaExecutor
+) : AndroidViewModel(application) {
 
     companion object {
         private const val TAG = "InferenceViewModel"
@@ -51,6 +69,9 @@ class InferenceViewModel(application: Application) : AndroidViewModel(applicatio
 
     // Koog ToolRegistry - built dynamically with CSV context
     private var toolRegistry: ToolRegistry? = null
+    
+    // Koog Agent
+    private var agent: AIAgent<String, String>? = null
 
     /**
      * Initialize the local Llama model.
@@ -213,6 +234,41 @@ class InferenceViewModel(application: Application) : AndroidViewModel(applicatio
             tool(GetCsvSchemaTool(currentCsvHeaders ?: ""))
             tool(SearchCsvTool(currentCsvLines))
         }
+        
+        // Rebuild Agent with new tools
+        toolRegistry?.let { registry ->
+            val systemInstructions = """
+                Answer questions about the following table data. Give direct text answers.
+                
+                Table:
+                ${currentCsvData ?: "No Data"}
+            """.trimIndent()
+
+            agent = AIAgent<String, String>(
+                llmModel = LocalLlamaModel,
+                promptExecutor = executor,
+                toolRegistry = registry,
+                systemPrompt = systemInstructions,
+                strategy = functionalStrategy { input -> // Define the agent logic
+                    // Send the user input to the LLM
+                    var responses = requestLLMMultiple(input)
+
+                    // Only loop while the LLM requests tools
+                    while (responses.containsToolCalls()) {
+                        // Extract tool calls from the response
+                        val pendingCalls = extractToolCalls(responses)
+                        // Execute the tools and return the results
+                        val results = executeMultipleTools(pendingCalls)
+                        // Send the tool results back to the LLM. The LLM may call more tools or return a final output
+                        responses = sendMultipleToolResults(results)
+                    }
+
+                    // When no tool calls remain, extract and return the assistant message content from the response
+                    responses.single().asAssistantMessage().content
+                }
+            )
+            Log.d(TAG, "Agent initialized with tools and data context")
+        }
     }
 
     /**
@@ -230,7 +286,15 @@ class InferenceViewModel(application: Application) : AndroidViewModel(applicatio
         
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val response = runAgentWithContext(userQuery)
+                val currentAgent = agent
+                if (currentAgent == null) {
+                    removeThinkingMessage()
+                    addMessage(ChatMessage.ErrorMessage("Agent not initialized. Please load a CSV file first."))
+                    return@launch
+                }
+
+                // Execute using Koog Agent
+                val response = currentAgent.run(userQuery)
                 
                 removeThinkingMessage()
                 
@@ -245,35 +309,6 @@ class InferenceViewModel(application: Application) : AndroidViewModel(applicatio
                 addMessage(ChatMessage.ErrorMessage(e.message ?: "Unknown Error"))
             }
         }
-    }
-
-    /**
-     * Run Koog-style agent with context injection for local model.
-     */
-    private fun runAgentWithContext(userQuery: String): String {
-        // Build prompt with CSV context (hybrid approach)
-        val prompt = buildPrompt(userQuery, currentCsvData)
-        Log.v(TAG, "Prompt:\n$prompt")
-
-        // Execute using LlamaBridge
-        return LlamaBridge.generate(prompt)
-    }
-
-    /**
-     * Build a prompt for the local TableLLM model with CSV context.
-     */
-    private fun buildPrompt(userQuery: String, csvData: String?): String {
-        val tableData = csvData ?: "No CSV data loaded."
-        
-        // Use a simpler, more direct prompt that discourages code generation
-        return """[INST]Answer the following question about this table data. Give a direct text answer, do not write any code or Python.
-
-Table:
-$tableData
-
-Question: $userQuery
-
-Answer directly in plain text:[INST/]"""
     }
 
     /**
