@@ -11,6 +11,7 @@ import com.sunueric.tabletalk.agent.AnalyzeCsvTool
 import com.sunueric.tabletalk.agent.GetCsvSchemaTool
 import com.sunueric.tabletalk.agent.LocalLlamaModel
 import com.sunueric.tabletalk.agent.SearchCsvTool
+import com.sunueric.tabletalk.data.ChatMessage
 import com.sunueric.tabletalk.ui.states.InferenceState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,8 +30,12 @@ class InferenceViewModel(application: Application) : AndroidViewModel(applicatio
         private const val TAG = "InferenceViewModel"
     }
 
+    // Maintained for backward compatibility / initial status, but ChatHistory is main driver now
     private val _uiState = MutableStateFlow<InferenceState>(InferenceState.Idle)
     val uiState = _uiState.asStateFlow()
+
+    private val _chatHistory = MutableStateFlow<List<ChatMessage>>(emptyList())
+    val chatHistory = _chatHistory.asStateFlow()
 
     // Exposed state for UI
     private val _isModelLoaded = MutableStateFlow(false)
@@ -61,11 +66,6 @@ class InferenceViewModel(application: Application) : AndroidViewModel(applicatio
             try {
                 // Check if file exists and is readable
                 val modelFile = java.io.File(modelPath)
-                Log.d(TAG, "File exists: ${modelFile.exists()}")
-                Log.d(TAG, "File canRead: ${modelFile.canRead()}")
-                Log.d(TAG, "File length: ${modelFile.length()} bytes")
-                Log.d(TAG, "File absolutePath: ${modelFile.absolutePath}")
-                
                 if (!modelFile.exists()) {
                     Log.e(TAG, "Model file does not exist at path: $modelPath")
                     _uiState.value = InferenceState.Error("Model file not found at: $modelPath")
@@ -107,23 +107,27 @@ class InferenceViewModel(application: Application) : AndroidViewModel(applicatio
                     currentModelPath = modelPath
                     Log.i(TAG, "Model loaded successfully!")
                     _uiState.value = InferenceState.Success("Model Ready! Upload a CSV file to start analyzing.")
+                    
+                    // Add system message to chat
+                    addMessage(ChatMessage.AgentMessage("Model loaded successfully! Please upload a CSV file to begin analysis."))
                 } else {
-                    Log.e(TAG, "initGenerateModel returned false - model failed to load")
-                    Log.e(TAG, "Possible causes: unsupported GGUF format, corrupted file, or insufficient memory")
+                    val errorMsg = "Model failed to load. Possible causes:\n" +
+                            "• Unsupported GGUF format\n" +
+                            "• Corrupted model file\n" +
+                            "• Insufficient device memory"
+                    
+                    Log.e(TAG, "initGenerateModel returned false")
                     _isModelLoaded.value = false
                     currentModelPath = null
-                    _uiState.value = InferenceState.Error(
-                        "Model failed to load. Possible causes:\n" +
-                        "• Unsupported GGUF format\n" +
-                        "• Corrupted model file\n" +
-                        "• Insufficient device memory for ${modelFile.length() / 1024 / 1024} MB model"
-                    )
+                    _uiState.value = InferenceState.Error(errorMsg)
+                    addMessage(ChatMessage.ErrorMessage(errorMsg))
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Model initialization failed", e)
                 _isModelLoaded.value = false
                 currentModelPath = null
                 _uiState.value = InferenceState.Error("Init Failed: ${e.message}")
+                addMessage(ChatMessage.ErrorMessage("Init Failed: ${e.message}"))
             }
         }
     }
@@ -137,12 +141,12 @@ class InferenceViewModel(application: Application) : AndroidViewModel(applicatio
 
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.value = InferenceState.Thinking("Loading CSV file...")
+            addMessage(ChatMessage.ThinkingMessage)
             
             try {
                 val uri = uriString.toUri()
                 val context = getApplication<Application>()
                 
-                Log.d(TAG, "Opening input stream for URI...")
                 val inputStream = context.contentResolver.openInputStream(uri)
                     ?: throw Exception("Could not open file")
 
@@ -150,11 +154,11 @@ class InferenceViewModel(application: Application) : AndroidViewModel(applicatio
                 val lines = reader.readLines()
                 reader.close()
 
-                Log.d(TAG, "Read ${lines.size} lines from CSV")
-
                 if (lines.isEmpty()) {
+                    removeThinkingMessage()
                     Log.w(TAG, "CSV file is empty")
                     _uiState.value = InferenceState.Error("Error: File is empty.")
+                    addMessage(ChatMessage.ErrorMessage("Error: File is empty."))
                     return@launch
                 }
 
@@ -162,10 +166,15 @@ class InferenceViewModel(application: Application) : AndroidViewModel(applicatio
                 currentCsvHeaders = lines[0]
                 currentCsvLines = lines.drop(1)
                 
-                Log.d(TAG, "CSV Headers: $currentCsvHeaders")
-                Log.d(TAG, "CSV Data rows: ${currentCsvLines.size}")
+                // Parse headers
+                val headers = currentCsvHeaders?.split(",") ?: emptyList()
+                
+                // Parse preview rows (limit to 10 for preview, but keep full data for tools)
+                val previewRows = currentCsvLines.take(10).map { line ->
+                    line.split(",")
+                }
 
-                // Format as raw CSV (header + first rows) - TableLLM expects this format
+                // Format as raw CSV for LLM
                 val dataRows = currentCsvLines.take(10)
                 val rawCsvPreview = listOf(currentCsvHeaders).plus(dataRows).joinToString("\n")
                 currentCsvData = rawCsvPreview
@@ -175,12 +184,22 @@ class InferenceViewModel(application: Application) : AndroidViewModel(applicatio
                 _isCsvLoaded.value = true
                 Log.i(TAG, "CSV loaded and ToolRegistry built")
 
-                _uiState.value = InferenceState.Success(
-                    "CSV Loaded! (${currentCsvLines.size} rows)\n\nHeaders: $currentCsvHeaders\n\nAsk a question about your data!"
-                )
+                _uiState.value = InferenceState.Success("CSV Loaded!")
+                
+                // Remove thinking and add Table Message
+                removeThinkingMessage()
+                addMessage(ChatMessage.TableMessage(
+                    headers = headers,
+                    rows = previewRows,
+                    totalRows = currentCsvLines.size
+                ))
+                addMessage(ChatMessage.AgentMessage("I've loaded your CSV file. You can now ask questions about this data."))
+
             } catch (e: Exception) {
+                removeThinkingMessage()
                 Log.e(TAG, "Error loading CSV", e)
                 _uiState.value = InferenceState.Error("Error loading CSV: ${e.message}")
+                addMessage(ChatMessage.ErrorMessage("Error loading CSV: ${e.message}"))
             }
         }
     }
@@ -189,46 +208,41 @@ class InferenceViewModel(application: Application) : AndroidViewModel(applicatio
      * Build Koog ToolRegistry with CSV analysis tools.
      */
     private fun buildToolRegistry() {
-        Log.d(TAG, "Building ToolRegistry...")
         toolRegistry = ToolRegistry {
             tool(AnalyzeCsvTool(currentCsvData ?: ""))
             tool(GetCsvSchemaTool(currentCsvHeaders ?: ""))
             tool(SearchCsvTool(currentCsvLines))
         }
-        val toolNames = toolRegistry?.tools?.joinToString(", ") { it.name } ?: "none"
-        Log.d(TAG, "ToolRegistry built with tools: $toolNames")
     }
 
     /**
      * Ask a question using Koog AIAgent (hybrid mode with context injection).
      */
     fun askQuestion(userQuery: String) {
-        Log.d(TAG, "askQuestion called: $userQuery")
-        Log.d(TAG, "Model state - isLoaded: ${_isModelLoaded.value}")
-
         if (!_isModelLoaded.value) {
-            Log.w(TAG, "Model not loaded, rejecting question")
-            _uiState.value = InferenceState.Error("Model not loaded yet. Please load a model first.")
+            addMessage(ChatMessage.ErrorMessage("Model not loaded yet. Please load a model first."))
             return
         }
 
+        // Add user message
+        addMessage(ChatMessage.UserMessage(userQuery))
+        addMessage(ChatMessage.ThinkingMessage)
+        
         viewModelScope.launch(Dispatchers.IO) {
-            _uiState.value = InferenceState.Thinking("Analyzing data with AI Agent...")
-
             try {
                 val response = runAgentWithContext(userQuery)
                 
-                // Handle null/empty response
+                removeThinkingMessage()
+                
                 if (response.isBlank()) {
-                    Log.w(TAG, "Model returned null or blank response")
-                    _uiState.value = InferenceState.Error("Model returned empty response. Try reloading the model.")
+                    addMessage(ChatMessage.ErrorMessage("Model returned empty response. Try reloading the model."))
                 } else {
-                    Log.d(TAG, "Got response (${response.length} chars)")
-                    _uiState.value = InferenceState.Success(response)
+                    addMessage(ChatMessage.AgentMessage(response))
                 }
             } catch (e: Exception) {
+                removeThinkingMessage()
                 Log.e(TAG, "Error during inference", e)
-                _uiState.value = InferenceState.Error(e.message ?: "Unknown Error")
+                addMessage(ChatMessage.ErrorMessage(e.message ?: "Unknown Error"))
             }
         }
     }
@@ -237,27 +251,16 @@ class InferenceViewModel(application: Application) : AndroidViewModel(applicatio
      * Run Koog-style agent with context injection for local model.
      */
     private fun runAgentWithContext(userQuery: String): String {
-        // Log available tools (learning/demo purpose)
-        val availableTools = toolRegistry?.tools?.joinToString(", ") { it.name } ?: "none"
-        Log.d(TAG, "Koog Agent - Available tools: $availableTools")
-        Log.d(TAG, "Koog Agent - Model: ${LocalLlamaModel.id} (${LocalLlamaModel.provider.id})")
-
         // Build prompt with CSV context (hybrid approach)
         val prompt = buildPrompt(userQuery, currentCsvData)
-        Log.d(TAG, "Built prompt (${prompt.length} chars)")
         Log.v(TAG, "Prompt:\n$prompt")
 
         // Execute using LlamaBridge
-        Log.d(TAG, "Calling LlamaBridge.generate...")
-        val result = LlamaBridge.generate(prompt)
-        Log.d(TAG, "LlamaBridge.generate returned: ${result.take(100)}...")
-        
-        return result
+        return LlamaBridge.generate(prompt)
     }
 
     /**
      * Build a prompt for the local TableLLM model with CSV context.
-     * Modified to strongly encourage direct text answers instead of code.
      */
     private fun buildPrompt(userQuery: String, csvData: String?): String {
         val tableData = csvData ?: "No CSV data loaded."
@@ -274,6 +277,24 @@ Answer directly in plain text:[INST/]"""
     }
 
     /**
+     * Helper to add a message to history
+     */
+    private fun addMessage(message: ChatMessage) {
+        val currentList = _chatHistory.value.toMutableList()
+        currentList.add(message)
+        _chatHistory.value = currentList
+    }
+
+    /**
+     * Helper to remove the last ThinkingMessage
+     */
+    private fun removeThinkingMessage() {
+        val currentList = _chatHistory.value.toMutableList()
+        currentList.removeAll { it is ChatMessage.ThinkingMessage }
+        _chatHistory.value = currentList
+    }
+
+    /**
      * Force reset the model state (useful for debugging).
      */
     fun resetModel() {
@@ -282,5 +303,6 @@ Answer directly in plain text:[INST/]"""
         _isCsvLoaded.value = false
         currentModelPath = null
         _uiState.value = InferenceState.Idle
+        _chatHistory.value = emptyList()
     }
 }

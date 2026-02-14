@@ -89,11 +89,13 @@ class MainActivity : ComponentActivity() {
                 
                 MainScreen(
                     uiState = uiState,
+                    chatHistoryState = viewModel.chatHistory,
                     onPickModel = { modelPickerLauncher.launch(arrayOf("*/*")) },
                     onPickCsv = { csvPickerLauncher.launch(arrayOf("text/*", "text/csv", "application/csv", "*/*")) },
                     onAskQuestion = { question -> viewModel.askQuestion(question) },
                     isModelLoaded = isModelLoaded,
-                    isCsvLoaded = isCsvLoaded
+                    isCsvLoaded = isCsvLoaded,
+                    onReset = { viewModel.resetModel() }
                 )
             }
         }

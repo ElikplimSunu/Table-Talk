@@ -10,34 +10,56 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
+    primary = DarkPrimary,
+    onPrimary = Color.White,
+    primaryContainer = DarkPrimaryContainer,
+    onPrimaryContainer = DarkOnPrimaryContainer,
+    secondary = TealAccent,
+    onSecondary = Color.Black,
+    secondaryContainer = DarkSecondaryContainer,
+    onSecondaryContainer = DarkOnSecondaryContainer,
+    tertiary = TealTertiary,
+    onTertiary = Color.Black,
+    background = DarkBackground,
+    onBackground = DarkOnSurface,
+    surface = DarkSurface,
+    onSurface = DarkOnSurface,
+    surfaceVariant = DarkSurfaceVariant,
+    onSurfaceVariant = DarkOnSurface,
+    error = Color(0xFFCF6679),
+    onError = Color.Black
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
-
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
+    primary = NavyPrimary,
     onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+    primaryContainer = LightPrimaryContainer,
+    onPrimaryContainer = LightOnPrimaryContainer,
+    secondary = TealAccent,
+    onSecondary = Color.Black,
+    secondaryContainer = LightSecondaryContainer,
+    onSecondaryContainer = LightOnSecondaryContainer,
+    tertiary = TealTertiary,
+    onTertiary = Color.Black,
+    background = LightBackground,
+    onBackground = NavyPrimary,
+    surface = LightSurface,
+    onSurface = NavyPrimary,
+    surfaceVariant = LightSurfaceVariant,
+    onSurfaceVariant = NavyPrimary,
+    error = Color(0xFFB00020),
+    onError = Color.White
 )
 
 @Composable
 fun TableTalkTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
+    // We disable it by default to enforce our brand identity
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {

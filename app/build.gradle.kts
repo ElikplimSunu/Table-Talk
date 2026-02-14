@@ -63,6 +63,8 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.core)
     implementation(libs.llamatik)
     implementation(libs.koog.agents)
+    implementation(libs.hilt.android)
+    implementation(libs.androidx.hilt.navigation.compose)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
