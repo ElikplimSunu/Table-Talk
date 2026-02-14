@@ -2,12 +2,10 @@ package com.sunueric.tabletalk.viewmodels
 
 import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.functionalStrategy
-import ai.koog.agents.core.dsl.builder.strategy
 import ai.koog.agents.core.dsl.extension.asAssistantMessage
 import ai.koog.agents.core.dsl.extension.containsToolCalls
 import ai.koog.agents.core.dsl.extension.executeMultipleTools
 import ai.koog.agents.core.dsl.extension.extractToolCalls
-import ai.koog.agents.core.dsl.extension.requestLLM
 import ai.koog.agents.core.dsl.extension.requestLLMMultiple
 import ai.koog.agents.core.dsl.extension.sendMultipleToolResults
 import ai.koog.agents.core.tools.ToolRegistry
@@ -19,8 +17,8 @@ import androidx.lifecycle.viewModelScope
 import com.llamatik.library.platform.LlamaBridge
 import com.sunueric.tabletalk.agent.AnalyzeCsvTool
 import com.sunueric.tabletalk.agent.GetCsvSchemaTool
-import com.sunueric.tabletalk.agent.LocalLlamaModel
 import com.sunueric.tabletalk.agent.LocalLlamaExecutor
+import com.sunueric.tabletalk.agent.LocalLlamaModel
 import com.sunueric.tabletalk.agent.SearchCsvTool
 import com.sunueric.tabletalk.data.ChatMessage
 import com.sunueric.tabletalk.ui.states.InferenceState
@@ -244,27 +242,45 @@ class InferenceViewModel @Inject constructor (
                 ${currentCsvData ?: "No Data"}
             """.trimIndent()
 
-            agent = AIAgent<String, String>(
+            agent = AIAgent(
                 llmModel = LocalLlamaModel,
                 promptExecutor = executor,
                 toolRegistry = registry,
                 systemPrompt = systemInstructions,
                 strategy = functionalStrategy { input -> // Define the agent logic
+                    Log.d(TAG, "Agent Strategy: Processing user input: $input")
+                    
                     // Send the user input to the LLM
                     var responses = requestLLMMultiple(input)
+                    Log.d(TAG, "Agent Strategy: Initial LLM response received")
+
+                    Log.d(TAG, "Agent Strategy: Checking for tool calls ${responses.forEach { it.content }}")
 
                     // Only loop while the LLM requests tools
                     while (responses.containsToolCalls()) {
+                        Log.d(TAG, "Agent Strategy: Tool calls detected")
+                        
                         // Extract tool calls from the response
                         val pendingCalls = extractToolCalls(responses)
+                        pendingCalls.forEach { 
+                            Log.d(TAG, "Agent Strategy: Executing tool '${it.tool}' with args: ${it.content}")
+                        }
+                        
                         // Execute the tools and return the results
                         val results = executeMultipleTools(pendingCalls)
+                        results.forEach {
+                            Log.d(TAG, "Agent Strategy: Tool '${it.tool}' Result: ${it.content}")
+                        }
+                        
                         // Send the tool results back to the LLM. The LLM may call more tools or return a final output
                         responses = sendMultipleToolResults(results)
+                        Log.d(TAG, "Agent Strategy: Tool results sent to LLM, received next response")
                     }
 
                     // When no tool calls remain, extract and return the assistant message content from the response
-                    responses.single().asAssistantMessage().content
+                    val finalContent = responses.single().asAssistantMessage().content
+                    Log.d(TAG, "Agent Strategy: Final response generated: $finalContent")
+                    finalContent
                 }
             )
             Log.d(TAG, "Agent initialized with tools and data context")
