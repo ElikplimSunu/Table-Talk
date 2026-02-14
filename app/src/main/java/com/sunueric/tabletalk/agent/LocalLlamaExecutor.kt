@@ -21,10 +21,13 @@ class LocalLlamaExecutor : PromptExecutor {
         tools: List<ToolDescriptor>
     ): List<Message.Response> {
 
-        val llamaPromptString = buildLlamaPrompt(prompt.messages)
+        // Inject tool instructions if tools are present
+        val toolInstructions = if (tools.isNotEmpty()) buildToolInstructions(tools) else ""
+        
+        val llamaPromptString = buildLlamaPrompt(prompt.messages, toolInstructions)
         val responseText = LlamaBridge.generate(llamaPromptString)
 
-        // Return the Assistant message with empty metadata (local model doesn't track tokens)
+        // Return the raw text. The Agent's strategy (extractToolCalls) will parse this.
         return listOf(
             Message.Assistant(
                 content = responseText,
@@ -40,7 +43,8 @@ class LocalLlamaExecutor : PromptExecutor {
         tools: List<ToolDescriptor>
     ): Flow<StreamFrame> = flow {
         // Get full response (non-streaming since LlamaBridge.generate is blocking)
-        val llamaPromptString = buildLlamaPrompt(prompt.messages)
+        val toolInstructions = if (tools.isNotEmpty()) buildToolInstructions(tools) else ""
+        val llamaPromptString = buildLlamaPrompt(prompt.messages, toolInstructions)
         val responseText = LlamaBridge.generate(llamaPromptString)
 
         // Emit the full text as an Append frame
@@ -61,9 +65,14 @@ class LocalLlamaExecutor : PromptExecutor {
     // --- Helper ---
     // Uses TableLLM's Text Answer format with [INST]...[INST/] tags
     // Reference: https://huggingface.co/RUCKBReasoning/TableLLM-7b#text-answer
-    private fun buildLlamaPrompt(messages: List<Message>): String {
+    private fun buildLlamaPrompt(messages: List<Message>, toolInstructions: String = ""): String {
         val sb = StringBuilder()
         sb.append("[INST]")
+        
+        // Add tool instructions first if present
+        if (toolInstructions.isNotEmpty()) {
+            sb.append("SYSTEM:\n$toolInstructions\n\n")
+        }
         
         messages.forEach { msg ->
             when (msg) {
@@ -76,5 +85,29 @@ class LocalLlamaExecutor : PromptExecutor {
         
         sb.append("[INST/]")
         return sb.toString()
+    }
+
+    private fun buildToolInstructions(tools: List<ToolDescriptor>): String {
+        val toolsJson = tools.joinToString(",\n") { tool ->
+            """
+            {
+                "name": "${tool.name}",
+                "description": "${tool.description}",
+                "parameters": "See args"
+            }
+            """.trimIndent()
+        }
+        
+        return """
+            You have access to the following tools:
+            [
+            $toolsJson
+            ]
+            
+            To use a tool, output ONLY a JSON object in this format:
+            { "tool": "tool_name", "args": { "arg_name": "value" } }
+            
+            If you do not need to use a tool, just answer normally.
+        """.trimIndent()
     }
 }

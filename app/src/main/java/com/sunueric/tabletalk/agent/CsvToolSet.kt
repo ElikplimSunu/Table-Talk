@@ -1,7 +1,6 @@
 package com.sunueric.tabletalk.agent
 
 import ai.koog.agents.core.tools.SimpleTool
-import ai.koog.agents.core.tools.Tool
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import kotlinx.serialization.Serializable
 
@@ -22,7 +21,7 @@ class AnalyzeCsvTool(
     @Serializable
     data class Args(
         val query: String
-    ) : Tool.Args
+    )
 
     override suspend fun execute(args: Args): String {
         // In hybrid mode, we inject context directly
@@ -43,14 +42,17 @@ class AnalyzeCsvTool(
  */
 class GetCsvSchemaTool(
     private val headers: String
-) : SimpleTool<Tool.EmptyArgs>(
-    argsSerializer = Tool.EmptyArgs.serializer(),
+) : SimpleTool<GetCsvSchemaTool.EmptyArgs>(
+    argsSerializer = EmptyArgs.serializer(),
     name = "get_csv_schema",
     description = "Get the column headers/schema of the loaded CSV file"
 ) {
-    override suspend fun execute(args: Tool.EmptyArgs): String {
+    override suspend fun execute(args: EmptyArgs): String {
         return "CSV Schema (Headers): $headers"
     }
+
+    @Serializable
+    object EmptyArgs
 }
 
 /**
@@ -67,7 +69,7 @@ class SearchCsvTool(
     data class Args(
         val searchTerm: String,
         val maxResults: Int = 10
-    ) : Tool.Args
+    )
 
     override suspend fun execute(args: Args): String {
         val matches = csvLines
