@@ -1,7 +1,12 @@
+import com.android.utils.TraceUtils.simpleId
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp) version libs.versions.kspPlugin
+    alias(libs.plugins.hilt.android) version libs.versions.hiltAndroid
+
 }
 
 android {
@@ -65,6 +70,8 @@ dependencies {
     implementation(libs.koog.agents)
     implementation(libs.hilt.android)
     implementation(libs.androidx.hilt.navigation.compose)
+    ksp(libs.hilt.android.compiler)
+    ksp(libs.androidx.hilt.compiler)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

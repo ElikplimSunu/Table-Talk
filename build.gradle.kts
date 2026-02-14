@@ -2,4 +2,6 @@
 plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.kotlin.compose) apply false
+    alias(libs.plugins.ksp) version libs.versions.kspPlugin apply false
+    alias(libs.plugins.hilt.android) version libs.versions.hiltAndroid apply false
 }
